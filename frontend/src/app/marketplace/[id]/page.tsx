@@ -1,216 +1,98 @@
-'use client';
+import { notFound } from 'next/navigation';
+import { getDealById } from '@/lib/api';
+import FundingProgressBar from '@/components/FundingProgressBar';
+import StatusBadge from '@/components/StatusBadge';
 
-import { useState, useEffect } from 'react';
-import { InvestmentForm } from '../../../components/InvestmentForm';
+export const revalidate = 60;
 
-interface TradeDeal {
-  id: string;
-  commodity: string;
-  quantity: number;
-  unit: string;
-  totalValue: number;
-  deliveryDate: string;
-  status: string;
-  tokenCount: number;
-  tokensRemaining: number;
-  traderName: string;
-  description?: string;
-}
+const MILESTONE_ORDER = ['farm', 'warehouse', 'port', 'importer'];
 
-export default function DealDetailPage({ params }: { params: { id: string } }) {
-  const [deal, setDeal] = useState<TradeDeal | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+export default async function DealDetailPage({ params }: { params: { id: string } }) {
+  const deal = await getDealById(params.id);
+  if (!deal) notFound();
 
-  useEffect(() => {
-    fetchDeal();
-  }, [params.id]);
-
-  const fetchDeal = async () => {
-    try {
-      const token = localStorage.getItem('authToken');
-      if (!token) {
-        throw new Error('Please log in to view deals');
-      }
-
-      const response = await fetch(`/api/trade-deals/${params.id}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch deal details');
-      }
-
-      const dealData = await response.json();
-      setDeal(dealData);
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to load deal');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleInvestmentSuccess = () => {
-    // Refresh deal data to update remaining tokens
-    fetchDeal();
-  };
-
-  if (loading) {
-    return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="animate-pulse">
-          <div className="h-8 bg-gray-200 rounded w-1/3 mb-6"></div>
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="h-4 bg-gray-200 rounded w-1/4 mb-4"></div>
-            <div className="h-4 bg-gray-200 rounded w-1/2 mb-4"></div>
-            <div className="h-4 bg-gray-200 rounded w-1/3 mb-4"></div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="bg-red-50 border border-red-200 rounded-lg p-6">
-          <h2 className="text-lg font-semibold text-red-800 mb-2">Error Loading Deal</h2>
-          <p className="text-red-600">{error}</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!deal) {
-    return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
-          <p className="text-gray-600">Deal not found</p>
-        </div>
-      </div>
-    );
-  }
-
-  const fundingProgress = ((deal.tokenCount - deal.tokensRemaining) / deal.tokenCount) * 100;
+  const milestones = [...(deal.milestones ?? [])].sort(
+    (a, b) => MILESTONE_ORDER.indexOf(a.milestone) - MILESTONE_ORDER.indexOf(b.milestone)
+  );
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="max-w-4xl mx-auto">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            {deal.commodity} Trade Deal
-          </h1>
-          <div className="flex items-center space-x-4 text-sm text-gray-600">
-            <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
-              {deal.status}
-            </span>
-            <span>Trader: {deal.traderName}</span>
+    <main className="min-h-screen bg-green-50 px-4 py-10">
+      <div className="max-w-3xl mx-auto space-y-8">
+
+        {/* Header */}
+        <div className="bg-white rounded-2xl shadow-sm border border-green-100 p-6 space-y-4">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <h1 className="text-2xl font-bold text-gray-800 capitalize">{deal.commodity}</h1>
+            <StatusBadge status={deal.status} />
           </div>
+
+          <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm text-gray-500">
+            <p>Quantity: <span className="text-gray-800 font-medium">{Number(deal.quantity).toLocaleString()} {deal.quantity_unit}</span></p>
+            <p>Total Value: <span className="text-gray-800 font-medium">${Number(deal.total_value).toLocaleString()}</span></p>
+            <p>Delivery Date: <span className="text-gray-800 font-medium">{new Date(deal.delivery_date).toLocaleDateString()}</span></p>
+            <p>Token: <span className="text-gray-800 font-medium">{deal.token_symbol}</span></p>
+          </div>
+
+          <FundingProgressBar totalValue={Number(deal.total_value)} totalInvested={Number(deal.total_invested)} />
+
+          {deal.status === 'open' && (
+            <a
+              href={`/invest/${deal.id}`}
+              className="inline-block mt-2 bg-green-600 hover:bg-green-700 text-white font-medium px-5 py-2.5 rounded-xl transition-colors"
+              data-investor-only
+            >
+              Fund this Deal
+            </a>
+          )}
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Deal Details */}
-          <div className="lg:col-span-2">
-            <div className="bg-white rounded-lg shadow p-6 mb-6">
-              <h2 className="text-xl font-semibold mb-4">Deal Details</h2>
-              
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Commodity</label>
-                  <p className="text-lg font-semibold">{deal.commodity}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Quantity</label>
-                  <p className="text-lg font-semibold">{deal.quantity} {deal.unit}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Total Value</label>
-                  <p className="text-lg font-semibold">${deal.totalValue.toLocaleString()}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Delivery Date</label>
-                  <p className="text-lg font-semibold">
-                    {new Date(deal.deliveryDate).toLocaleDateString()}
-                  </p>
-                </div>
-              </div>
+        {/* Documents */}
+        <section className="bg-white rounded-2xl shadow-sm border border-green-100 p-6">
+          <h2 className="text-lg font-semibold text-gray-800 mb-4">Documents</h2>
+          {!deal.documents || deal.documents.length === 0 ? (
+            <p className="text-sm text-gray-400">No documents uploaded yet.</p>
+          ) : (
+            <ul className="divide-y divide-gray-100">
+              {deal.documents.map((doc) => (
+                <li key={doc.id} className="py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                  <div>
+                    <span className="text-sm font-medium text-gray-700 capitalize">{doc.doc_type.replace(/_/g, ' ')}</span>
+                    <p className="text-xs text-gray-400">{new Date(doc.created_at).toLocaleDateString()}</p>
+                  </div>
+                  <a
+                    href={`https://ipfs.io/ipfs/${doc.ipfs_hash}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-green-600 hover:underline break-all"
+                  >
+                    {doc.ipfs_hash}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
 
-              {deal.description && (
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Description</label>
-                  <p className="text-gray-700 mt-1">{deal.description}</p>
-                </div>
-              )}
-            </div>
+        {/* Milestones */}
+        <section className="bg-white rounded-2xl shadow-sm border border-green-100 p-6">
+          <h2 className="text-lg font-semibold text-gray-800 mb-4">Shipment Milestones</h2>
+          {milestones.length === 0 ? (
+            <p className="text-sm text-gray-400">No milestones recorded yet.</p>
+          ) : (
+            <ol className="relative border-l border-green-200 space-y-6 ml-3">
+              {milestones.map((m) => (
+                <li key={m.id} className="ml-4">
+                  <span className="absolute -left-1.5 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />
+                  <p className="text-sm font-semibold text-gray-700 capitalize">{m.milestone}</p>
+                  {m.notes && <p className="text-sm text-gray-500">{m.notes}</p>}
+                  <p className="text-xs text-gray-400">{new Date(m.recorded_at).toLocaleString()}</p>
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
 
-            {/* Funding Progress */}
-            <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-xl font-semibold mb-4">Funding Progress</h2>
-              
-              <div className="mb-4">
-                <div className="flex justify-between text-sm text-gray-600 mb-2">
-                  <span>Progress</span>
-                  <span>{Math.round(fundingProgress)}%</span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div 
-                    className="bg-green-600 h-2 rounded-full transition-all duration-300"
-                    style={{ width: `${fundingProgress}%` }}
-                  ></div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-4 text-center">
-                <div>
-                  <p className="text-2xl font-bold text-green-600">
-                    {deal.tokenCount - deal.tokensRemaining}
-                  </p>
-                  <p className="text-sm text-gray-500">Tokens Sold</p>
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-blue-600">
-                    {deal.tokensRemaining}
-                  </p>
-                  <p className="text-sm text-gray-500">Available</p>
-                </div>
-                <div>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {deal.tokenCount}
-                  </p>
-                  <p className="text-sm text-gray-500">Total Tokens</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Investment Form */}
-          <div className="lg:col-span-1">
-            <div className="bg-white rounded-lg shadow p-6 sticky top-8">
-              <h2 className="text-xl font-semibold mb-4">Fund this Deal</h2>
-              
-              {deal.status === 'open' && deal.tokensRemaining > 0 ? (
-                <InvestmentForm
-                  dealId={deal.id}
-                  maxTokens={deal.tokensRemaining}
-                  tokenPrice={100}
-                  onSuccess={handleInvestmentSuccess}
-                />
-              ) : (
-                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                  <p className="text-gray-600 text-sm text-center">
-                    {deal.status !== 'open' 
-                      ? `This deal is ${deal.status} and no longer accepting investments.`
-                      : 'This deal is fully funded.'
-                    }
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
       </div>
-    </div>
+    </main>
   );
 }
