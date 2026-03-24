@@ -10,15 +10,19 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
-import { InvestmentsService } from './investments.service';
-import { CreateInvestmentDto } from './dto/create-investment.dto';
 
 interface AuthRequest extends Request {
   user: { id: string; role: string };
 }
 
-@Controller('investments')
+
+import { KycGuard } from '../auth/kyc.guard';
+import { InvestmentsService } from './investments.service';
+import { CreateInvestmentDto } from './dto/create-investment.dto';
+import { User } from '../auth/entities/user.entity';
+
 @UseGuards(AuthGuard('jwt'))
+@Controller('investments')
 export class InvestmentsController {
   constructor(private readonly investmentsService: InvestmentsService) {}
 

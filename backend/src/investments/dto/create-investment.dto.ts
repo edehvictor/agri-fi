@@ -1,4 +1,4 @@
-import { IsUUID, IsNumber, IsPositive, IsNotEmpty } from 'class-validator';
+import { IsUUID, IsNumber, IsPositive, IsNotEmpty,  IsInt, Min } from 'class-validator';
 
 export class CreateInvestmentDto {
   @IsUUID()
@@ -12,4 +12,8 @@ export class CreateInvestmentDto {
   @IsNumber()
   @IsPositive()
   amountUsd: number;
+
+  @IsInt()
+  @Min(1)
+  token_amount: number;
 }
