@@ -5,7 +5,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { Investment, InvestmentStatus } from './entities/investment.entity';
 import { CreateInvestmentDto } from './dto/create-investment.dto';
 import { TradeDeal, TradeDealStatus } from '../trade-deals/entities/trade-deal.entity';
@@ -20,6 +20,7 @@ export class InvestmentsService {
     @InjectRepository(TradeDeal)
     private readonly tradeDealRepo: Repository<TradeDeal>,
     private readonly stellarService: StellarService,
+    private readonly dataSource: DataSource,
     private readonly queueService: QueueService,
   ) {}
 
@@ -119,29 +120,41 @@ export class InvestmentsService {
 
     // Update total invested on the trade deal using confirmed investments sum
     const tradeDeal = investment.tradeDeal;
-    const confirmedInvestments = await this.investmentRepo.find({
-      where: { 
-        tradeDealId: tradeDeal.id, 
-        status: InvestmentStatus.CONFIRMED 
-      },
-    });
+    let becameFunded = false;
 
-    const newTotalInvested = confirmedInvestments.reduce(
-      (sum, inv) => sum + Number(inv.amountUsd),
-      0,
-    );
-
-    await this.tradeDealRepo.update(tradeDeal.id, {
-      totalInvested: newTotalInvested,
-    });
-
-    // Check if deal is now fully funded
-    if (newTotalInvested >= Number(tradeDeal.totalValue)) {
-      await this.tradeDealRepo.update(tradeDeal.id, {
-        status: 'funded',
+    await this.dataSource.transaction(async (manager) => {
+      await manager.update(Investment, investmentId, {
+        status: InvestmentStatus.CONFIRMED,
+        stellarTxId,
       });
+
+      const confirmedInvestments = await manager.find(Investment, {
+        where: { tradeDealId: tradeDeal.id, status: InvestmentStatus.CONFIRMED },
+      });
+
+      const newTotalInvested = confirmedInvestments.reduce(
+        (sum, inv) => sum + Number(inv.amountUsd),
+        0,
+      );
+
+      await manager.update(TradeDeal, tradeDeal.id, { totalInvested: newTotalInvested });
+
+      if (newTotalInvested >= Number(tradeDeal.totalValue)) {
+        const result = await manager.update(
+          TradeDeal,
+          { id: tradeDeal.id, status: 'open' as TradeDealStatus },
+          { status: 'funded' as TradeDealStatus },
+        );
+        becameFunded = (result.affected ?? 0) > 0;
+      }
+    });
+
+    if (becameFunded) {
+      this.sendFundedNotification(tradeDeal).catch(() => {});
     }
 
+    investment.status = InvestmentStatus.CONFIRMED;
+    investment.stellarTxId = stellarTxId;
     return investment;
   }
 
