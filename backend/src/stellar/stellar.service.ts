@@ -1,5 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Injectable, Logger } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import {
   Horizon,
   Keypair,
@@ -9,8 +9,8 @@ import {
   Asset,
   BASE_FEE,
   Memo,
-} from 'stellar-sdk';
-import { createDecipheriv, createCipheriv, randomBytes } from 'crypto';
+} from "stellar-sdk";
+import { createDecipheriv, createCipheriv, randomBytes } from "crypto";
 
 export interface InvestorShare {
   walletAddress: string;
@@ -27,16 +27,16 @@ export class StellarService {
 
   constructor(private readonly config: ConfigService) {
     const horizonUrl = config.get<string>(
-      'STELLAR_HORIZON_URL',
-      'https://horizon-testnet.stellar.org',
+      "STELLAR_HORIZON_URL",
+      "https://horizon-testnet.stellar.org",
     );
-    const network = config.get<string>('STELLAR_NETWORK', 'testnet');
+    const network = config.get<string>("STELLAR_NETWORK", "testnet");
 
     this.server = new Horizon.Server(horizonUrl);
     this.networkPassphrase =
-      network === 'mainnet' ? Networks.PUBLIC : Networks.TESTNET;
+      network === "mainnet" ? Networks.PUBLIC : Networks.TESTNET;
 
-    const platformSecret = config.get<string>('STELLAR_PLATFORM_SECRET', '');
+    const platformSecret = config.get<string>("STELLAR_PLATFORM_SECRET", "");
     this.platformKeypair = platformSecret
       ? Keypair.fromSecret(platformSecret)
       : Keypair.random();
@@ -64,7 +64,7 @@ export class StellarService {
       .addOperation(
         Operation.createAccount({
           destination: escrowKeypair.publicKey(),
-          startingBalance: '2', // minimum XLM for account + trustline
+          startingBalance: "2", // minimum XLM for account + trustline
         }),
       )
       .addMemo(Memo.text(`escrow:${tradeDealId.slice(0, 20)}`))
@@ -113,7 +113,7 @@ export class StellarService {
       .addOperation(
         Operation.createAccount({
           destination: issuerKeypair.publicKey(),
-          startingBalance: '1.5',
+          startingBalance: "1.5",
         }),
       )
       .setTimeout(30)
@@ -261,7 +261,9 @@ export class StellarService {
 
     const result = await this.server.submitTransaction(tx);
     const txId = (result as any).hash as string;
-    this.logger.log(`Transferred ${tokenAmount} ${assetCode} tokens to ${investorWallet}. txId=${txId}`);
+    this.logger.log(
+      `Transferred ${tokenAmount} ${assetCode} tokens to ${investorWallet}. txId=${txId}`,
+    );
     return txId;
   }
 
@@ -270,12 +272,18 @@ export class StellarService {
    */
   encryptSecret(secret: string): string {
     const key = Buffer.from(
-      this.config.get<string>('ENCRYPTION_KEY', '').padEnd(32, '0').slice(0, 32),
+      this.config
+        .get<string>("ENCRYPTION_KEY", "")
+        .padEnd(32, "0")
+        .slice(0, 32),
     );
     const iv = randomBytes(16);
-    const cipher = createCipheriv('aes-256-cbc', key, iv);
-    const encrypted = Buffer.concat([cipher.update(secret, 'utf8'), cipher.final()]);
-    return `${iv.toString('hex')}:${encrypted.toString('hex')}`;
+    const cipher = createCipheriv("aes-256-cbc", key, iv);
+    const encrypted = Buffer.concat([
+      cipher.update(secret, "utf8"),
+      cipher.final(),
+    ]);
+    return `${iv.toString("hex")}:${encrypted.toString("hex")}`;
   }
 
   /**
@@ -283,13 +291,19 @@ export class StellarService {
    */
   decryptSecret(encryptedSecret: string): string {
     const key = Buffer.from(
-      this.config.get<string>('ENCRYPTION_KEY', '').padEnd(32, '0').slice(0, 32),
+      this.config
+        .get<string>("ENCRYPTION_KEY", "")
+        .padEnd(32, "0")
+        .slice(0, 32),
     );
-    const [ivHex, encryptedHex] = encryptedSecret.split(':');
-    const iv = Buffer.from(ivHex, 'hex');
-    const encrypted = Buffer.from(encryptedHex, 'hex');
-    const decipher = createDecipheriv('aes-256-cbc', key, iv);
-    return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
+    const [ivHex, encryptedHex] = encryptedSecret.split(":");
+    const iv = Buffer.from(ivHex, "hex");
+    const encrypted = Buffer.from(encryptedHex, "hex");
+    const decipher = createDecipheriv("aes-256-cbc", key, iv);
+    return Buffer.concat([
+      decipher.update(encrypted),
+      decipher.final(),
+    ]).toString("utf8");
   }
 
   /**
@@ -308,8 +322,26 @@ export class StellarService {
       escrowKeypair.publicKey(),
     );
 
-    const platformFee = totalValue * 0.02;
-    const farmerAmount = totalValue * 0.98;
+    // Convert to stroops (1 XLM = 10^7 stroops)
+    const totalStroops = Math.round(totalValue * 1e7);
+
+    if (totalStroops <= 0) {
+      throw new Error("Invalid totalValue");
+    }
+
+    // Calculate platform + farmer
+    const platformStroops = Math.floor(totalStroops * 0.02);
+    const farmerStroops = Math.floor(totalStroops * 0.98);
+
+    // Compute total tokens safely
+    const totalTokens = investorShares.reduce(
+      (sum, s) => sum + s.tokenAmount,
+      0,
+    );
+
+    if (totalTokens <= 0) {
+      throw new Error("Invalid investor token distribution");
+    }
 
     const txBuilder = new TransactionBuilder(escrowAccount, {
       fee: BASE_FEE,
@@ -321,40 +353,60 @@ export class StellarService {
       Operation.payment({
         destination: farmerWallet,
         asset: Asset.native(),
-        amount: farmerAmount.toFixed(7),
+        amount: (farmerStroops / 1e7).toFixed(7),
       }),
     );
 
-    // Investor distributions (proportional)
-    for (const share of investorShares) {
-      const investorAmount =
-        (share.tokenAmount / share.totalTokens) * totalValue;
+    // Investors
+    let distributedToInvestors = 0;
+
+    investorShares.forEach((share, index) => {
+      let shareStroops = Math.floor(
+        (share.tokenAmount / totalTokens) * totalStroops,
+      );
+
+      // Fix rounding remainder on last investor
+      if (index === investorShares.length - 1) {
+        shareStroops =
+          totalStroops -
+          farmerStroops -
+          platformStroops -
+          distributedToInvestors;
+      }
+
+      distributedToInvestors += shareStroops;
+
       txBuilder.addOperation(
         Operation.payment({
           destination: share.walletAddress,
           asset: Asset.native(),
-          amount: investorAmount.toFixed(7),
+          amount: (shareStroops / 1e7).toFixed(7),
         }),
       );
-    }
+    });
 
     // Platform fee
     txBuilder.addOperation(
       Operation.payment({
         destination: platformWallet,
         asset: Asset.native(),
-        amount: platformFee.toFixed(7),
+        amount: (platformStroops / 1e7).toFixed(7),
       }),
     );
 
     const tx = txBuilder.setTimeout(30).build();
     tx.sign(escrowKeypair);
 
-    const result = await this.server.submitTransaction(tx);
-    const txId = (result as any).hash as string;
+    try {
+      const result = await this.server.submitTransaction(tx);
+      const txId = (result as any).hash as string;
 
-    this.logger.log(`Escrow released for deal. txId=${txId}`);
-    return [txId];
+      this.logger.log(`Escrow released for deal. txId=${txId}`);
+      return [txId];
+    } catch (err: any) {
+      this.logger.error(`Escrow release failed: ${err.message}`, err.stack);
+      throw new Error(`Escrow release failed: ${err.message}`);
+    }
   }
 
   /**
@@ -376,7 +428,7 @@ export class StellarService {
         Operation.payment({
           destination: signerKeypair.publicKey(), // self-payment as anchor
           asset: Asset.native(),
-          amount: '0.0000001',
+          amount: "0.0000001",
         }),
       )
       .addMemo(Memo.text(memoText))
@@ -427,7 +479,7 @@ export class StellarService {
   async submitTransaction(signedXdr: string): Promise<any> {
     const tx = TransactionBuilder.fromXDR(signedXdr, this.networkPassphrase);
     const result = await this.server.submitTransaction(tx);
-    
+
     this.logger.log(`Transaction submitted: ${(result as any).hash}`);
     return result;
   }
@@ -437,13 +489,13 @@ export class StellarService {
    */
   async getTransactionStatus(
     txId: string,
-  ): Promise<'success' | 'failed' | 'pending'> {
+  ): Promise<"success" | "failed" | "pending"> {
     try {
       const tx = await this.server.transactions().transaction(txId).call();
-      return tx.successful ? 'success' : 'failed';
+      return tx.successful ? "success" : "failed";
     } catch (err: any) {
       if (err?.response?.status === 404) {
-        return 'pending';
+        return "pending";
       }
       throw err;
     }
