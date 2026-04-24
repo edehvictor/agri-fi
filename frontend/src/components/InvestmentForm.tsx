@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useWallet } from '../hooks/useWallet';
+import { getStoredToken } from '../lib/api';
 
 interface InvestmentFormProps {
   dealId: string;
@@ -52,7 +53,7 @@ export const InvestmentForm: React.FC<InvestmentFormProps> = ({
     setSuccess(null);
 
     try {
-      const token = localStorage.getItem('authToken');
+      const token = getStoredToken();
       if (!token) {
         throw new Error('Please log in first');
       }
@@ -217,7 +218,7 @@ export const InvestmentForm: React.FC<InvestmentFormProps> = ({
       </button>
 
       <p className="text-xs text-gray-500 text-center">
-        This will open Freighter to sign the transaction. Make sure you're on Stellar testnet.
+        This will open Freighter to sign the transaction. Make sure you&apos;re on Stellar testnet.
       </p>
     </form>
   );
