@@ -192,11 +192,14 @@ export class QueueProcessor {
           investor.email,
           `Deal Fully Funded: ${data.commodity}`,
           `Good news! The deal for ${data.commodity} you invested in (Deal ID: ${data.tradeDealId}) is now fully funded. You invested ${investor.tokenAmount} tokens.`,
-          `<h3>Deal Fully Funded</h3><p>Good news! The deal for <strong>${data.commodity}</strong> you invested in (Deal ID: ${data.tradeDealId}) is now fully funded.</p><p>You invested ${investor.tokenAmount} tokens.</p>`
+          `<h3>Deal Fully Funded</h3><p>Good news! The deal for <strong>${data.commodity}</strong> you invested in (Deal ID: ${data.tradeDealId}) is now fully funded.</p><p>You invested ${investor.tokenAmount} tokens.</p>`,
         );
       }
     } catch (e: any) {
-      this.logger.error({ error: e.message }, `Failed to send deal.funded notifications: ${e.message}`);
+      this.logger.error(
+        { error: e.message },
+        `Failed to send deal.funded notifications: ${e.message}`,
+      );
     }
 
     const channel = context.getChannelRef();
@@ -217,7 +220,9 @@ export class QueueProcessor {
     try {
       let emailAddress = data.email;
       if (!emailAddress && data.userId) {
-        const user = await this.userRepo.findOne({ where: { id: data.userId } });
+        const user = await this.userRepo.findOne({
+          where: { id: data.userId },
+        });
         if (user) {
           emailAddress = user.email;
         }
@@ -236,7 +241,7 @@ export class QueueProcessor {
           subject = `Deal Completed: ${data.dealDetails?.commodity}`;
           text = `The deal you participated in (${data.dealDetails?.commodity}) has been completed.`;
           html = `<h3>Deal Completed</h3><p>The deal you participated in (<strong>${data.dealDetails?.commodity}</strong>) has been completed.</p>`;
-          
+
           if (data.recipient === 'investor') {
             text += `\nYour return: $${data.dealDetails?.returnAmount?.toFixed(2)}`;
             html += `<p>Your return: $${data.dealDetails?.returnAmount?.toFixed(2)}</p>`;
@@ -247,13 +252,24 @@ export class QueueProcessor {
         }
 
         if (subject) {
-          await this.notificationsService.sendEmail(emailAddress, subject, text, html);
+          await this.notificationsService.sendEmail(
+            emailAddress,
+            subject,
+            text,
+            html,
+          );
         }
       } else {
-        this.logger.warn({ userId: data.userId }, 'No email address found for user notification');
+        this.logger.warn(
+          { userId: data.userId },
+          'No email address found for user notification',
+        );
       }
     } catch (e: any) {
-      this.logger.error({ error: e.message }, `Failed to send email.notification: ${e.message}`);
+      this.logger.error(
+        { error: e.message },
+        `Failed to send email.notification: ${e.message}`,
+      );
     }
 
     const channel = context.getChannelRef();

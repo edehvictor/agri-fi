@@ -127,7 +127,11 @@ export class AuthService {
       console.log(
         `KYC auto-verified for user ${user.email} (Method: ${dto.isCorporate ? 'Automated Corporate' : 'System Config'}).`,
       );
-      this.queueService.emit('email.notification', { type: 'kyc_verified', email: user.email, userId: user.id });
+      this.queueService.emit('email.notification', {
+        type: 'kyc_verified',
+        email: user.email,
+        userId: user.id,
+      });
     } else {
       console.log(`KYC submission pending review for user ${user.email}.`);
     }
@@ -208,7 +212,11 @@ export class AuthService {
     console.log(
       `KYC manually verified for user ${user.email} — notification queued.`,
     );
-    this.queueService.emit('email.notification', { type: 'kyc_verified', email: user.email, userId: user.id });
+    this.queueService.emit('email.notification', {
+      type: 'kyc_verified',
+      email: user.email,
+      userId: user.id,
+    });
 
     return { kycStatus: user.kycStatus };
   }
