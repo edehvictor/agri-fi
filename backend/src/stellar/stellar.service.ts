@@ -519,6 +519,41 @@ export class StellarService {
   }
 
   /**
+   * Records a document's SHA-256 hash on the Stellar ledger using Memo.Hash.
+   * This serves as a tamper-proof "Proof of Existence".
+   */
+  async recordDocumentHash(
+    docHashHex: string,
+    signerSecret: string,
+  ): Promise<string> {
+    const signerKeypair = Keypair.fromSecret(signerSecret);
+    const account = await this.server.loadAccount(signerKeypair.publicKey());
+
+    // Create a transaction with the document hash in the Memo
+    // We use a minimal self-payment as the carrier for the memo
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: this.networkPassphrase,
+    })
+      .addOperation(
+        Operation.payment({
+          destination: signerKeypair.publicKey(),
+          asset: Asset.native(),
+          amount: '0.000001',
+        }),
+      )
+      .addMemo(Memo.hash(docHashHex))
+      .setTimeout(30)
+      .build();
+
+    tx.sign(signerKeypair);
+    const result = await this.server.submitTransaction(tx);
+    
+    const txId = (result as any).hash as string;
+    return txId;
+  }
+
+  /**
    * Records an arbitrary memo on Stellar (used for milestone anchoring and document hashes).
    * Returns the transaction ID.
    */
